@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Change to your actual Docker Hub username!
-        DOCKER_IMAGE = "YOUR_DOCKERHUB_USERNAME/securenoc-backend"
+        DOCKER_IMAGE = "tsameer/securenoc-backend"
     }
 
     stages {
