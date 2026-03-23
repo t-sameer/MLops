@@ -2,8 +2,9 @@ pipeline {
     agent any
     
     environment {
-        // Change to your actual Docker Hub username!
-        DOCKER_IMAGE = "tsameer/securenoc-backend"
+        // Change "sameer123" to your actual lowercase Docker Hub username!
+        DOCKER_IMAGE_BACKEND = "tsameer/securenoc-backend"
+        DOCKER_IMAGE_FRONTEND = "tsameer/securenoc-frontend"
     }
 
     stages {
@@ -13,21 +14,21 @@ pipeline {
             }
         }
         
-        stage('Build Docker Image') {
+        stage('Build Docker Images') {
             steps {
-                echo "Building Docker Image..."
-                // We build the image FIRST so all Python dependencies are packaged inside
-                sh "docker build -t ${DOCKER_IMAGE}:latest ./src/backend"
+                echo "🔨 Building Backend Docker Image..."
+                sh "docker build -t ${DOCKER_IMAGE_BACKEND}:latest ./src/backend"
+                
+                echo "🎨 Building Frontend Docker Image..."
+                sh "docker build -t ${DOCKER_IMAGE_FRONTEND}:latest ./src/frontend"
             }
         }
         
         stage('Automated Testing') {
             steps {
-                echo "Running Pytest INSIDE the built image..."
-                // We run a temporary container from the image we JUST built.
-                // It already has your code and requirements installed!
+                echo "🧪 Running Pytest INSIDE the built backend image..."
                 sh '''
-                    docker run --rm ${DOCKER_IMAGE}:latest /bin/sh -c "
+                    docker run --rm ${DOCKER_IMAGE_BACKEND}:latest /bin/sh -c "
                         pip install pytest httpx && 
                         pytest tests/
                     "
@@ -35,42 +36,46 @@ pipeline {
             }
         }
         
-        stage('Push Docker Image') {
+        stage('Push Docker Images') {
             steps {
-                echo "Pushing to Docker Hub..."
+                echo "☁️ Pushing to Docker Hub..."
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                     sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
-                    sh "docker push ${DOCKER_IMAGE}:latest"
+                    
+                    echo "Pushing Backend..."
+                    sh "docker push ${DOCKER_IMAGE_BACKEND}:latest"
+                    
+                    echo "Pushing Frontend..."
+                    sh "docker push ${DOCKER_IMAGE_FRONTEND}:latest"
                 }
             }
         }
         
-       stage('Deploy to Kubernetes') {
+        stage('Deploy to Kubernetes') {
             steps {
-                echo "Downloading kubectl tool..."
+                echo "📥 Downloading kubectl tool..."
                 sh '''
                     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
                     chmod +x ./kubectl
                 '''
                 
-                echo "Patching Kubeconfig for Docker-to-Host networking..."
+                echo "🔌 Patching Kubeconfig for Docker-to-Host networking..."
                 sh '''
                     cp /root/.kube/config ./jenkins-kubeconfig
                     sed -i 's/0.0.0.0/172.17.0.1/g' ./jenkins-kubeconfig
                     sed -i 's/127.0.0.1/172.17.0.1/g' ./jenkins-kubeconfig
                 '''
 
-                echo "Applying Kubernetes Manifests..."
+                echo "🚀 Applying Kubernetes Manifests & Rolling Out..."
                 sh '''
                     export KUBECONFIG=./jenkins-kubeconfig
                     
-                    # BYPASS TLS CHECK FOR LOCAL K3D
-                    ./kubectl apply -f k8s/monitoring.yml --insecure-skip-tls-verify=true
+                    # Apply all YAML files in the k8s directory
+                    ./kubectl apply -f k8s/ --insecure-skip-tls-verify=true
                     
-                    # If you have a separate file for your backend, you can also add:
-                    # ./kubectl apply -f k8s/pvc.yml --insecure-skip-tls-verify=true
-                    
+                    # Force Kubernetes to pull the new images and restart the pods
                     ./kubectl rollout restart deployment backend --insecure-skip-tls-verify=true
+                    ./kubectl rollout restart deployment frontend --insecure-skip-tls-verify=true
                 '''
             }
         }
