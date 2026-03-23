@@ -45,22 +45,32 @@ pipeline {
             }
         }
         
-        stage('Deploy to Kubernetes') {
+       stage('Deploy to Kubernetes') {
             steps {
                 echo "Downloading kubectl tool..."
                 sh '''
-                    # Download the latest stable kubectl release
                     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                    # Make it executable
                     chmod +x ./kubectl
                 '''
                 
+                echo "Patching Kubeconfig for Docker-to-Host networking..."
+                sh '''
+                    # Copy the config so we don't accidentally break your Ubuntu laptop's setup!
+                    cp /root/.kube/config ./jenkins-kubeconfig
+                    
+                    # Swap localhost with the Docker Bridge Gateway (Your Ubuntu Host)
+                    sed -i 's/0.0.0.0/172.17.0.1/g' ./jenkins-kubeconfig
+                    sed -i 's/127.0.0.1/172.17.0.1/g' ./jenkins-kubeconfig
+                '''
+
                 echo "Applying Kubernetes Manifests..."
-                // Use the downloaded ./kubectl instead of the system kubectl
-                sh "./kubectl apply -f k8s/monitoring.yml"
-                
-                echo "Triggering Rolling Update..."
-                sh "./kubectl rollout restart deployment backend"
+                sh '''
+                    # Tell kubectl to use our patched config file
+                    export KUBECONFIG=./jenkins-kubeconfig
+                    
+                    ./kubectl apply -f k8s/monitoring.yml
+                    ./kubectl rollout restart deployment backend
+                '''
             }
         }
     }
