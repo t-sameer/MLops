@@ -2,39 +2,42 @@ pipeline {
     agent any
     
     environment {
-        // Change this to your actual Docker Hub username!
+        // Change to your actual Docker Hub username!
         DOCKER_IMAGE = "YOUR_DOCKERHUB_USERNAME/securenoc-backend"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Pulls the code from the GitHub repo that triggered the webhook
                 checkout scm
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo "Building Docker Image..."
+                // We build the image FIRST so all Python dependencies are packaged inside
+                sh "docker build -t ${DOCKER_IMAGE}:latest ./src/backend"
             }
         }
         
         stage('Automated Testing') {
             steps {
-                echo "Running Python Pytest validation..."
-                // We use Docker to spin up a temporary Python environment, mount the workspace, and run tests!
+                echo "Running Pytest INSIDE the built image..."
+                // We run a temporary container from the image we JUST built.
+                // It already has your code and requirements installed!
                 sh '''
-                    docker run --rm -v ${WORKSPACE}:/app -w /app python:3.10-slim /bin/sh -c "
-                        pip install -r src/backend/requirements.txt &&
-                        pip install pytest httpx &&
-                        pytest src/backend/tests/
+                    docker run --rm ${DOCKER_IMAGE}:latest /bin/sh -c "
+                        pip install pytest httpx && 
+                        pytest tests/
                     "
                 '''
             }
         }
         
-        stage('Build & Push Docker Image') {
+        stage('Push Docker Image') {
             steps {
-                echo "Building Docker Image..."
-                sh "docker build -t ${DOCKER_IMAGE}:latest ./src/backend"
-                
                 echo "Pushing to Docker Hub..."
-                // Requires you to add 'dockerhub-creds' in Jenkins Credentials
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                     sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
                     sh "docker push ${DOCKER_IMAGE}:latest"
@@ -45,7 +48,7 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 echo "Applying Kubernetes Manifests..."
-                sh "kubectl apply -f k8s/"
+                sh "kubectl apply -f k8s/monitoring.yml"
                 
                 echo "Triggering Rolling Update..."
                 sh "kubectl rollout restart deployment backend"
