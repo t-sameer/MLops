@@ -55,21 +55,22 @@ pipeline {
                 
                 echo "Patching Kubeconfig for Docker-to-Host networking..."
                 sh '''
-                    # Copy the config so we don't accidentally break your Ubuntu laptop's setup!
                     cp /root/.kube/config ./jenkins-kubeconfig
-                    
-                    # Swap localhost with the Docker Bridge Gateway (Your Ubuntu Host)
                     sed -i 's/0.0.0.0/172.17.0.1/g' ./jenkins-kubeconfig
                     sed -i 's/127.0.0.1/172.17.0.1/g' ./jenkins-kubeconfig
                 '''
 
                 echo "Applying Kubernetes Manifests..."
                 sh '''
-                    # Tell kubectl to use our patched config file
                     export KUBECONFIG=./jenkins-kubeconfig
                     
-                    ./kubectl apply -f k8s/monitoring.yml
-                    ./kubectl rollout restart deployment backend
+                    # BYPASS TLS CHECK FOR LOCAL K3D
+                    ./kubectl apply -f k8s/monitoring.yml --insecure-skip-tls-verify=true
+                    
+                    # If you have a separate file for your backend, you can also add:
+                    # ./kubectl apply -f k8s/pvc.yml --insecure-skip-tls-verify=true
+                    
+                    ./kubectl rollout restart deployment backend --insecure-skip-tls-verify=true
                 '''
             }
         }
