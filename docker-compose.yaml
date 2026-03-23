@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # --- NEW: HashiCorp Vault ---
+  vault:
+    image: hashicorp/vault:1.13
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=securenoc-root-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+
+  backend:
+    build:
+      context: ./src/backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      # Tell the backend how to securely talk to Vault
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=securenoc-root-token
+    depends_on:
+      - vault
+
+  frontend:
+    build:
+      context: ./src/frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend

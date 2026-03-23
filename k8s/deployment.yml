@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: securenoc-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+# 1. Vault Deployment & Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+    spec:
+      containers:
+      - name: vault
+        image: hashicorp/vault:1.13
+        ports:
+        - containerPort: 8200
+        env:
+        - name: VAULT_DEV_ROOT_TOKEN_ID
+          value: "securenoc-root-token"
+        - name: VAULT_DEV_LISTEN_ADDRESS
+          value: "0.0.0.0:8200"
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-service
+spec:
+  selector:
+    app: vault
+  ports:
+    - protocol: TCP
+      port: 8200
+      targetPort: 8200
+---
+# 2. Backend Deployment & Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        # UPDATED: Matches your ctr output exactly
+        image: project_backend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault-service:8200"
+        - name: VAULT_TOKEN
+          value: "securenoc-root-token"
+        volumeMounts:
+        - mountPath: "/app/data"
+          name: data-volume
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "2.5Gi"
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: securenoc-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+---
+# 3. Frontend Deployment & Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        # UPDATED: Matches your ctr output exactly
+        image: project_frontend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8501
+        env:
+        - name: BACKEND_URL
+          value: "http://backend-service:8000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+    - protocol: TCP
+      port: 8501
+      targetPort: 8501

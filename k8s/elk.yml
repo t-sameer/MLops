@@ -1,0 +1,147 @@
+# 1. Elasticsearch (Constrained)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+        env:
+        - name: discovery.type
+          value: "single-node"
+        - name: ES_JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
+        ports:
+        - containerPort: 9200
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+spec:
+  selector:
+    app: elasticsearch
+  ports:
+    - protocol: TCP
+      port: 9200
+      targetPort: 9200
+---
+# 2. Kibana
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:7.17.18
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch:9200"
+        ports:
+        - containerPort: 5601
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+spec:
+  selector:
+    app: kibana
+  ports:
+    - protocol: TCP
+      port: 5601
+      targetPort: 5601
+---
+# 3. Filebeat DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      containers:
+      - name: filebeat
+        image: docker.elastic.co/beats/filebeat:7.17.18
+        # FIX: Force Filebeat to run as root to read K8s system logs
+        securityContext:
+          runAsUser: 0
+        args: [
+          "-c", "/etc/filebeat.yml",
+          "-e",
+        ]
+        env:
+        - name: ELASTICSEARCH_HOST
+          value: "elasticsearch:9200"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/filebeat.yml
+          readOnly: true
+          subPath: filebeat.yml
+        - name: data
+          mountPath: /usr/share/filebeat/data
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: filebeat-config
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: data
+        hostPath:
+          path: /var/lib/filebeat-data
+          type: DirectoryOrCreate
+---
+# Filebeat ConfigMap (Instructs it to parse JSON and send to ES)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+data:
+  filebeat.yml: |-
+    filebeat.inputs:
+    - type: container
+      paths:
+        - /var/log/containers/*.log
+      processors:
+        - decode_json_fields:
+            fields: ["message"]
+            target: "json"
+            overwrite_keys: true
+    output.elasticsearch:
+      hosts: ['elasticsearch:9200']

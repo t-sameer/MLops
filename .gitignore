@@ -1,0 +1,33 @@
+# Environments & Secrets
+.env
+.venv/
+venv/
+env/
+
+# Python Caches & Testing
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Databases & Vector Indices (NEVER commit these)
+# Adjust the path if your data folder is somewhere else
+src/backend/data/chroma_db/
+src/backend/data/*.db
+data/chroma_db/
+data/*.db
+
+# Docker & Kubernetes Artifacts
+# Ignores the sideloading tarballs you created for k3d
+*.tar
+securenoc.tar
+securenoc-images.tar
+
+# Logs
+*.log
+
+# IDEs and OS Files
+.vscode/
+.idea/
+.DS_Store
