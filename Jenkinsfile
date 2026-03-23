@@ -17,10 +17,13 @@ pipeline {
         stage('Automated Testing') {
             steps {
                 echo "Running Python Pytest validation..."
+                // We use Docker to spin up a temporary Python environment, mount the workspace, and run tests!
                 sh '''
-                    pip install -r src/backend/requirements.txt
-                    pip install pytest httpx
-                    pytest src/backend/tests/
+                    docker run --rm -v ${WORKSPACE}:/app -w /app python:3.10-slim /bin/sh -c "
+                        pip install -r src/backend/requirements.txt &&
+                        pip install pytest httpx &&
+                        pytest src/backend/tests/
+                    "
                 '''
             }
         }
