@@ -12,7 +12,6 @@ from groq import Groq
 
 app = FastAPI()
 
-# --- NEW: JSON Logging Middleware for ELK Stack ---
 @app.middleware("http")
 async def json_logging_middleware(request: Request, call_next):
     start_time = time.time()
