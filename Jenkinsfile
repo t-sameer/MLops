@@ -47,11 +47,20 @@ pipeline {
         
         stage('Deploy to Kubernetes') {
             steps {
+                echo "Downloading kubectl tool..."
+                sh '''
+                    # Download the latest stable kubectl release
+                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                    # Make it executable
+                    chmod +x ./kubectl
+                '''
+                
                 echo "Applying Kubernetes Manifests..."
-                sh "kubectl apply -f k8s/monitoring.yml"
+                // Use the downloaded ./kubectl instead of the system kubectl
+                sh "./kubectl apply -f k8s/monitoring.yml"
                 
                 echo "Triggering Rolling Update..."
-                sh "kubectl rollout restart deployment backend"
+                sh "./kubectl rollout restart deployment backend"
             }
         }
     }
